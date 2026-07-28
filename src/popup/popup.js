@@ -1,5 +1,7 @@
 /**
  * Popup：展示当前邮箱页面可见的发件人，一键加入重点名单。
+ * 163 列表只有显示名，优先添加"显示名规则"；若扩展已学习到该名字的
+ * 真实地址，则添加更精确的"地址规则"。
  */
 
 const senderListEl = document.getElementById('sender-list');
@@ -25,14 +27,14 @@ async function refreshCount() {
 async function loadSenders() {
   senderListEl.innerHTML = '<div class="empty">正在读取…</div>';
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || !/^https:\/\/(mail|email)\.163\.com\//.test(tab.url || '')) {
+  if (!tab || !/^https:\/\/[a-z0-9.-]*163\.com\//.test(tab.url || '')) {
     senderListEl.innerHTML = '<div class="empty">请先打开 163 邮箱页面。</div>';
     return;
   }
 
   let response = null;
   try {
-    // 消息会送达所有 frame，含发件人的 frame（通常只有邮件列表那个）会应答
+    // 消息会送达所有 frame，含邮件列表的 frame（通常只有一个）会应答
     response = await chrome.tabs.sendMessage(tab.id, { type: 'PH_GET_VISIBLE_SENDERS' });
   } catch (e) {
     // 没有 frame 应答（页面未加载完成或不在列表页）
@@ -59,14 +61,20 @@ function buildSenderItem(sender, watchlist) {
   info.className = 'info';
   const name = document.createElement('div');
   name.className = 'name';
-  name.textContent = sender.senderName || sender.email;
-  const email = document.createElement('div');
-  email.className = 'email';
-  email.textContent = sender.email;
-  info.append(name, email);
+  name.textContent = sender.name;
+  const sub = document.createElement('div');
+  sub.className = 'email';
+  sub.textContent = sender.email || '（仅显示名）';
+  info.append(name, sub);
   item.appendChild(info);
 
-  const already = watchlist.some(w => w.email === sender.email);
+  // 已关注判定：显示名规则命中，或已学习地址的地址规则命中
+  const already = watchlist.some(w =>
+    (w.type === 'name' && w.value === sender.name) ||
+    (sender.email && w.type === 'email' && w.value === sender.email) ||
+    (sender.email && w.type === 'domain' && sender.email.endsWith(w.value))
+  );
+
   if (already) {
     const tag = document.createElement('span');
     tag.className = 'added';
@@ -76,10 +84,14 @@ function buildSenderItem(sender, watchlist) {
     const btn = document.createElement('button');
     btn.textContent = '＋ 关注';
     btn.addEventListener('click', async () => {
-      const result = await PH_Storage.addWatchItem(sender.email, sender.senderName);
+      // 已学习到地址则加地址规则（精确），否则加显示名规则（立即可用）
+      const rule = sender.email || sender.name;
+      const note = sender.email ? sender.name : '';
+      const result = await PH_Storage.addWatchItem(rule, note);
       if (result.ok) {
+        const typeLabel = { email: '地址', domain: '域名', name: '显示名' }[result.type];
         btn.replaceWith(Object.assign(document.createElement('span'), {
-          className: 'added', textContent: '✓ 已加入'
+          className: 'added', textContent: `✓ 已加入(${typeLabel})`
         }));
         await refreshCount();
       }

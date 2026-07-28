@@ -27,7 +27,10 @@ async function notifyOnce(mail) {
   const title = mail.note
     ? `📮 重点邮件 · ${mail.note}`
     : '📮 收到重点联系人邮件';
-  const message = `${mail.senderName} <${mail.email}>\n${mail.subject || '(无主题)'}`;
+  const senderLine = mail.email
+    ? `${mail.senderName} <${mail.email}>`
+    : mail.senderName;
+  const message = `${senderLine}\n${mail.subject || '(无主题)'}`;
 
   chrome.notifications.create(`ph-${hashKey(mail.key)}`, {
     type: 'basic',

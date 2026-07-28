@@ -1,11 +1,12 @@
 /**
- * 存储层封装：重点名单与用户设置的读写。
- * 使用 chrome.storage.sync（可在同一账号的多设备间同步）。
+ * 存储层封装：重点名单、用户设置、显示名→地址学习映射。
  *
- * 数据结构：
- *   watchlist: Array<{ email: string, note: string, enabled: boolean }>
- *     - email 支持两种形式：完整地址 "boss@company.com"，或域名规则 "@company.com"
- *   settings: { desktopNotify: boolean, highlightColor: string }
+ * 名单项结构（v0.3 起）：{ type, value, note, enabled }
+ *   type = 'email'  完整地址，如 boss@company.com（扩展"学习"到该行地址后命中）
+ *   type = 'domain' 域名规则，如 @company.com（同上）
+ *   type = 'name'   显示名规则，如 裴一发（163 列表 DOM 只有显示名，立即可用）
+ * 旧版 { email, note, enabled } 数据在读取时自动迁移。
+ * 名单与设置用 chrome.storage.sync（跨设备同步），学习映射用 chrome.storage.local。
  */
 
 const PH_DEFAULT_SETTINGS = {
@@ -14,82 +15,118 @@ const PH_DEFAULT_SETTINGS = {
 };
 
 const PH_Storage = {
-  /** 读取重点名单 */
+  /* ---------- 名单 ---------- */
+
   async getWatchlist() {
     const data = await chrome.storage.sync.get({ watchlist: [] });
-    return data.watchlist;
+    const migrated = data.watchlist.map(item => this._migrate(item)).filter(Boolean);
+    if (JSON.stringify(migrated) !== JSON.stringify(data.watchlist)) {
+      await this.setWatchlist(migrated);
+    }
+    return migrated;
   },
 
-  /** 覆盖写入重点名单 */
   async setWatchlist(list) {
     await chrome.storage.sync.set({ watchlist: list });
   },
 
-  /** 添加一条关注项，返回 { ok, reason } */
-  async addWatchItem(email, note = '') {
-    email = (email || '').trim().toLowerCase();
-    if (!PH_Storage.isValidRule(email)) {
-      return { ok: false, reason: 'invalid' };
+  /** 旧版数据 { email, note, enabled } → 新版 { type, value, note, enabled } */
+  _migrate(item) {
+    if (!item) return null;
+    if (item.type && typeof item.value === 'string') return item;
+    if (typeof item.email === 'string') {
+      return {
+        type: item.email.startsWith('@') ? 'domain' : 'email',
+        value: item.email.toLowerCase(),
+        note: item.note || '',
+        enabled: item.enabled !== false
+      };
     }
-    const list = await PH_Storage.getWatchlist();
-    if (list.some(item => item.email === email)) {
+    return null;
+  },
+
+  /**
+   * 识别规则类型：完整地址 / @域名 / 显示名；无法识别返回 null。
+   */
+  detectRuleType(input) {
+    const v = (input || '').trim();
+    if (/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(v)) return 'email';
+    if (/^@[a-z0-9.-]+\.[a-z]{2,}$/i.test(v)) return 'domain';
+    if (v.length >= 1 && v.length <= 50 && !v.includes('@') && !/[<>\\/"']/.test(v)) return 'name';
+    return null;
+  },
+
+  /** 添加一条规则，返回 { ok, reason?, type? } */
+  async addWatchItem(input, note = '') {
+    const raw = (input || '').trim();
+    const type = this.detectRuleType(raw);
+    if (!type) return { ok: false, reason: 'invalid' };
+    const value = type === 'name' ? raw : raw.toLowerCase();
+    const list = await this.getWatchlist();
+    if (list.some(i => i.type === type && i.value === value)) {
       return { ok: false, reason: 'duplicate' };
     }
-    list.push({ email, note: note.trim(), enabled: true });
-    await PH_Storage.setWatchlist(list);
-    return { ok: true };
+    list.push({ type, value, note: note.trim(), enabled: true });
+    await this.setWatchlist(list);
+    return { ok: true, type };
   },
 
-  /** 按 email 删除一条关注项 */
-  async removeWatchItem(email) {
-    const list = await PH_Storage.getWatchlist();
-    await PH_Storage.setWatchlist(list.filter(item => item.email !== email));
+  /** 删除一条规则 */
+  async removeWatchItem(type, value) {
+    const list = await this.getWatchlist();
+    await this.setWatchlist(list.filter(i => !(i.type === type && i.value === value)));
   },
 
-  /** 读取设置（合并默认值） */
+  /**
+   * 判断一封邮件是否命中名单。
+   * @param {object} mail { name: 显示名, email: 地址（可为空） }
+   * @returns 命中的名单项或 null
+   */
+  matchWatchlist(mail, watchlist) {
+    const name = (mail.name || '').trim();
+    const email = (mail.email || '').toLowerCase();
+    for (const item of watchlist) {
+      if (!item.enabled) continue;
+      if (item.type === 'name' && name && item.value === name) return item;
+      if (item.type === 'email' && email && item.value === email) return item;
+      if (item.type === 'domain' && email && email.endsWith(item.value)) return item;
+    }
+    return null;
+  },
+
+  /* ---------- 设置 ---------- */
+
   async getSettings() {
     const data = await chrome.storage.sync.get({ settings: {} });
     return { ...PH_DEFAULT_SETTINGS, ...data.settings };
   },
 
-  /** 局部更新设置 */
   async updateSettings(patch) {
-    const settings = await PH_Storage.getSettings();
+    const settings = await this.getSettings();
     await chrome.storage.sync.set({ settings: { ...settings, ...patch } });
   },
 
-  /**
-   * 校验规则字符串是否合法：
-   *   - 完整地址：user@domain.tld
-   *   - 域名规则：@domain.tld
-   */
-  isValidRule(rule) {
-    return /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(rule) ||
-           /^@[a-z0-9.-]+\.[a-z]{2,}$/.test(rule);
+  /* ---------- 显示名→地址 学习映射 ---------- */
+
+  async getNameEmailMap() {
+    const data = await chrome.storage.local.get({ nameEmailMap: {} });
+    return data.nameEmailMap;
   },
 
-  /**
-   * 判断一个发件人地址是否命中名单中的某项。
-   * @param {string} senderAddr 已规范化为小写的纯邮箱地址
-   * @param {Array} watchlist
-   * @returns {object|null} 命中的名单项，未命中返回 null
-   */
-  matchWatchlist(senderAddr, watchlist) {
-    if (!senderAddr) return null;
-    const addr = senderAddr.toLowerCase();
-    for (const item of watchlist) {
-      if (!item.enabled) continue;
-      if (item.email.startsWith('@')) {
-        if (addr.endsWith(item.email)) return item;
-      } else if (addr === item.email) {
-        return item;
-      }
-    }
-    return null;
+  /** 记录一条 显示名→地址 映射；有实际新增时返回 true */
+  async learnNameEmail(name, email) {
+    name = (name || '').trim();
+    email = (email || '').toLowerCase();
+    if (!name || !email) return false;
+    const map = await this.getNameEmailMap();
+    if (map[name] === email) return false;
+    map[name] = email;
+    const keys = Object.keys(map);
+    if (keys.length > 1000) delete map[keys[0]]; // 容量保护
+    await chrome.storage.local.set({ nameEmailMap: map });
+    return true;
   }
 };
 
-// 同时暴露给 content script（页面内）与 popup/options（扩展页面）。
-// 扩展页面里是模块级全局，content script 中作为后续脚本共享的全局对象。
 globalThis.PH_Storage = PH_Storage;
 globalThis.PH_DEFAULT_SETTINGS = PH_DEFAULT_SETTINGS;

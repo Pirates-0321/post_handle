@@ -39,11 +39,11 @@
 </head>
 <body>
   <h1>⭐ 重点名单管理</h1>
-  <p class="tip">支持完整邮箱地址（boss@company.com）或整个域名（@company.com）。名单通过浏览器账号同步。</p>
+  <p class="tip">支持三种规则：<b>显示名</b>（如：裴一发，列表页立即生效）、<b>完整地址</b>（boss@company.com）、<b>@域名</b>（@company.com）。后两者在扩展"学习"到对应地址后生效（悬停列表中的发件人即可触发学习）。名单通过浏览器账号同步。</p>
 
   <h2>添加关注</h2>
   <div class="add-form">
-    <input type="text" class="email" id="input-email" placeholder="邮箱地址或 @域名">
+    <input type="text" class="email" id="input-email" placeholder="显示名、邮箱地址或 @域名">
     <input type="text" class="note" id="input-note" placeholder="备注（如：直属领导）">
     <button id="btn-add">添加</button>
     <span class="msg" id="add-msg"></span>
@@ -52,7 +52,7 @@
   <h2>当前名单</h2>
   <table>
     <thead>
-      <tr><th>启用</th><th>地址 / 域名</th><th>备注</th><th></th></tr>
+      <tr><th>启用</th><th>类型</th><th>规则</th><th>备注</th><th></th></tr>
     </thead>
     <tbody id="watch-tbody"></tbody>
   </table>

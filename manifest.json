@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "163邮箱重点邮件助手",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "标注 163 邮箱中的重点关注发件人，收到其新邮件时发出桌面通知提醒。",
   "icons": {
     "16": "icons/icon16.png",
