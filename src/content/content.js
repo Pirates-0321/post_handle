@@ -37,15 +37,16 @@
   const INBOX_FID = 1;
   let lastFidLogged = undefined;
 
-  /** 从 location.hash 解析当前文件夹 id：#module=mbox.ListModule|{"fid":1,...} */
+  /**
+   * 从 location.hash 解析当前文件夹 id。
+   * 兼容两种形态：编码态 %22fid%22%3A1 与解码态 "fid":1；
+   * 刻意不用 decodeURIComponent——hash 内容含裸 % 时会抛 URIError，
+   * 导致 fid 永远为 null（通知与自动刷新被同时禁用）。
+   */
   function getCurrentFid() {
-    try {
-      const hash = decodeURIComponent(location.hash || '');
-      const m = hash.match(/"fid"\s*:\s*(\d+)/);
-      return m ? parseInt(m[1], 10) : null;
-    } catch (e) {
-      return null;
-    }
+    const hash = location.hash || '';
+    const m = hash.match(/(?:%22|")fid(?:%22|")(?:%3A|:)(\d+)/i);
+    return m ? parseInt(m[1], 10) : null;
   }
 
   async function init() {
@@ -207,8 +208,11 @@
         const isNewKey = !knownKeys.has(info.key);
         if (isNewKey) knownKeys.add(info.key);
         matchedInfos.push(info);
-        if (!isBaselineScan && !opts.refreshOnly && isNewKey && info.unread) {
-          if (fid === INBOX_FID) {
+        if (!isBaselineScan && !opts.refreshOnly && isNewKey) {
+          // 命中但未通知时必须说明原因，便于诊断
+          if (!info.unread) {
+            log(`重点邮件已出现，但判定为已读，跳过通知: ${info.name} | ${info.subject}`);
+          } else if (fid === INBOX_FID) {
             reportNewMail(info, matched);
           } else {
             log(`重点邮件出现在非收件箱视图（fid=${fid}），不弹通知:`, info.name, '|', info.subject);
