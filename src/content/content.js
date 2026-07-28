@@ -1,10 +1,12 @@
 /**
- * 内容脚本：注入 mail.163.com 的所有 frame。
+ * 内容脚本：注入 163 邮箱相关页面的所有 frame。
  * 职责：
  *   1. 扫描邮件列表，对命中重点名单的行做高亮标注；
  *   2. 用 MutationObserver 监听列表变化，识别新到达的重点邮件，
  *      通知 service worker 弹桌面提醒；
  *   3. 响应 popup 的"当前页面发件人"查询。
+ *
+ * 诊断：所有日志带 [PH] 前缀，在控制台过滤 "[PH]" 即可看到扩展的工作状态。
  */
 
 (function () {
@@ -14,23 +16,30 @@
   const BADGE_CLASS = 'ph-vip-badge';
   const BADGE_ATTR = 'data-ph-badge';
 
+  function log(...args) { console.log('[PH]', ...args); }
+  function warn(...args) { console.warn('[PH]', ...args); }
+
   /** 本 frame 生命周期内已上报过的邮件 key（跨 frame 的去重由 service worker 负责） */
   const reportedKeys = new Set();
   let watchlist = [];
   let settings = { desktopNotify: true, highlightColor: '#fff1b8' };
   /** 首次扫描只建立基线，不对存量邮件发通知 */
   let baselineDone = false;
+  /** 每个 frame 只打一次"未找到邮件行"的提示，避免刷屏 */
+  let emptyScanLogged = false;
 
   async function init() {
+    log('content script 已注入 frame:', location.href.slice(0, 150));
     try {
       [watchlist, settings] = await Promise.all([
         PH_Storage.getWatchlist(),
         PH_Storage.getSettings()
       ]);
     } catch (e) {
-      // storage 不可用时静默退出（例如扩展重载瞬间）
+      warn('读取存储失败，扩展上下文可能已失效，请刷新页面', e);
       return;
     }
+    log(`名单 ${watchlist.length} 条，桌面通知 ${settings.desktopNotify ? '开' : '关'}`);
     applyHighlightColor();
 
     // 名单/设置变化时实时刷新
@@ -38,6 +47,7 @@
       if (area !== 'sync') return;
       if (changes.watchlist) {
         watchlist = changes.watchlist.newValue || [];
+        log('名单已更新，重新扫描，共', watchlist.length, '条');
         scan(false, { refreshOnly: true });
       }
       if (changes.settings) {
@@ -68,8 +78,8 @@
   function collectVisibleSenders() {
     const out = [];
     const seen = new Set();
-    for (const { row, senderNode } of PH_Selectors.findMailRows(document)) {
-      const info = PH_Selectors.parseRow(row, senderNode);
+    for (const { row, senderNode, raw } of PH_Selectors.findMailRows(document)) {
+      const info = PH_Selectors.parseRow(row, senderNode, raw);
       if (!info || seen.has(info.email)) continue;
       seen.add(info.email);
       out.push({ email: info.email, senderName: info.senderName, subject: info.subject });
@@ -84,12 +94,30 @@
    */
   function scan(isBaseline, opts = {}) {
     if (!document.body) return;
-    for (const { row, senderNode } of PH_Selectors.findMailRows(document)) {
-      const info = PH_Selectors.parseRow(row, senderNode);
+    if (watchlist.length === 0) {
+      if (!emptyScanLogged) {
+        emptyScanLogged = true;
+        log('重点名单为空，跳过扫描（在扩展设置页添加关注地址后开始工作）');
+      }
+      return;
+    }
+
+    const candidates = PH_Selectors.findSenderCandidates(document);
+    const rows = PH_Selectors.findMailRows(document);
+
+    if (isBaseline || !emptyScanLogged) {
+      log(`扫描：含地址候选 ${candidates.length} 个，识别邮件行 ${rows.length} 行`);
+      emptyScanLogged = true;
+    }
+
+    let matchedCount = 0;
+    for (const { row, senderNode, raw } of rows) {
+      const info = PH_Selectors.parseRow(row, senderNode, raw);
       if (!info) continue;
 
       const matched = PH_Storage.matchWatchlist(info.email, watchlist);
       if (matched) {
+        matchedCount++;
         highlightRow(row, matched);
         if (!isBaseline && !opts.refreshOnly && info.unread && !reportedKeys.has(info.key)) {
           reportedKeys.add(info.key);
@@ -99,20 +127,26 @@
         unhighlightRow(row);
       }
     }
-    if (isBaseline) baselineDone = true;
+
+    if (isBaseline) {
+      baselineDone = true;
+      log(`基线完成：命中重点邮件 ${matchedCount} 行（基线不发通知）`);
+      if (rows.length === 0) {
+        warn('未识别到任何邮件行。如果你正停留在邮件列表页，请把某个发件人元素'
+          + '（右键 → 检查）的 outerHTML 反馈给开发者用于适配。');
+      }
+    }
   }
 
   /** 高亮一行并打上星标 */
   function highlightRow(row, matchedItem) {
     row.classList.add(HIGHLIGHT_CLASS);
-    row.title = row.title || `重点关注：${matchedItem.note || matchedItem.email}`;
     if (!row.querySelector(`[${BADGE_ATTR}]`)) {
       const badge = document.createElement('span');
       badge.className = BADGE_CLASS;
       badge.setAttribute(BADGE_ATTR, '1');
       badge.textContent = '★';
       badge.title = `重点关注：${matchedItem.note || matchedItem.email}`;
-      // 插到行内第一个元素前，避免破坏布局
       row.insertBefore(badge, row.firstChild);
     }
   }
@@ -127,6 +161,7 @@
   /** 上报给 service worker 弹通知 */
   function reportNewMail(info, matchedItem) {
     if (!settings.desktopNotify) return;
+    log('发现重点新邮件，上报通知:', info.senderName, info.subject);
     try {
       chrome.runtime.sendMessage({
         type: 'PH_NEW_VIP_MAIL',
@@ -140,7 +175,7 @@
         }
       });
     } catch (e) {
-      // 扩展上下文失效（如扩展更新）时忽略
+      warn('上报通知失败，扩展上下文可能已失效，请刷新页面', e);
     }
   }
 

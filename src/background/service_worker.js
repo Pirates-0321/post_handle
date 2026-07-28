@@ -31,7 +31,7 @@ async function notifyOnce(mail) {
 
   chrome.notifications.create(`ph-${hashKey(mail.key)}`, {
     type: 'basic',
-    iconUrl: '../../icons/icon128.png',
+    iconUrl: chrome.runtime.getURL('icons/icon128.png'),
     title,
     message,
     priority: 2
