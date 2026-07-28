@@ -1,7 +1,7 @@
 /**
  * 内容脚本：注入 163 邮箱相关页面的所有 frame。
  * 职责：
- *   1. 扫描邮件列表（div[sign="letter"] 行），对命中重点名单的行高亮 + 星标；
+ *   1. 扫描邮件列表（div[sign="letter"] 行），匹配重点名单；
  *   2. MutationObserver 监听列表变化，识别新到达的重点未读邮件并上报通知；
  *   3. 监听发件人 title 属性变化，学习"显示名→地址"映射；
  *   4. 响应 popup 的"当前页面发件人"查询。
@@ -10,15 +10,13 @@
  * （163 是 React SPA，列表异步渲染，基线必须在列表出现后完成），基线只记录
  * 不通知；之后出现的"新 key"且未读才上报。
  *
+ * 注：v0.5 起移除了列表高亮/星标标注，仅保留桌面通知。
+ *
  * 诊断：所有日志带 [PH] 前缀，控制台过滤 "[PH]" 即可观察扩展工作状态。
  */
 
 (function () {
   'use strict';
-
-  const HIGHLIGHT_CLASS = 'ph-vip-row';
-  const BADGE_CLASS = 'ph-vip-badge';
-  const BADGE_ATTR = 'data-ph-badge';
 
   function log(...args) { console.log('[PH]', ...args); }
   function warn(...args) { console.warn('[PH]', ...args); }
@@ -28,7 +26,7 @@
   /** 是否已完成"首次见到邮件行"的基线（列表异步渲染，不能按注入时机算） */
   let sawFirstRows = false;
   let watchlist = [];
-  let settings = { desktopNotify: true, highlightColor: '#fff1b8' };
+  let settings = { desktopNotify: true, autoRefreshSec: 60 };
   let nameEmailMap = {};
   let scanSummaryLogged = false;
   let orphanWarned = false;
@@ -48,7 +46,6 @@
       return;
     }
     log(`名单 ${watchlist.length} 条，已学习地址 ${Object.keys(nameEmailMap).length} 个，桌面通知 ${settings.desktopNotify ? '开' : '关'}`);
-    applyHighlightColor();
 
     // 名单/设置/学习映射变化时实时刷新
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -59,7 +56,6 @@
       }
       if (area === 'sync' && changes.settings) {
         settings = { ...settings, ...(changes.settings.newValue || {}) };
-        applyHighlightColor();
         setupAutoRefresh();
       }
       if (area === 'local' && changes.nameEmailMap) {
@@ -119,10 +115,6 @@
     }
     btn.click();
     log('已自动触发列表刷新（检测新邮件）');
-  }
-
-  function applyHighlightColor() {
-    document.documentElement.style.setProperty('--ph-highlight', settings.highlightColor);
   }
 
   /** 解析一行并补充学习到的地址；解析失败返回 null */
@@ -189,12 +181,9 @@
         const isNewKey = !knownKeys.has(info.key);
         if (isNewKey) knownKeys.add(info.key);
         matchedInfos.push(info);
-        highlightRow(row, matched);
         if (!isBaselineScan && !opts.refreshOnly && isNewKey && info.unread) {
           reportNewMail(info, matched);
         }
-      } else {
-        unhighlightRow(row);
       }
     }
 
@@ -206,26 +195,6 @@
     } else if (isInitScan && rows.length === 0) {
       log('列表尚未渲染（React 异步加载），等待列表出现后再建基线…');
     }
-  }
-
-  /** 高亮一行并打上星标 */
-  function highlightRow(row, matchedItem) {
-    row.classList.add(HIGHLIGHT_CLASS);
-    if (!row.querySelector(`[${BADGE_ATTR}]`)) {
-      const badge = document.createElement('span');
-      badge.className = BADGE_CLASS;
-      badge.setAttribute(BADGE_ATTR, '1');
-      badge.textContent = '★';
-      badge.title = `重点关注：${matchedItem.note || matchedItem.value}`;
-      row.insertBefore(badge, row.firstChild);
-    }
-  }
-
-  /** 取消高亮（名单移除后调用） */
-  function unhighlightRow(row) {
-    if (!row.classList.contains(HIGHLIGHT_CLASS)) return;
-    row.classList.remove(HIGHLIGHT_CLASS);
-    row.querySelectorAll(`[${BADGE_ATTR}]`).forEach(b => b.remove());
   }
 
   /** 上报给 service worker 弹通知 */
