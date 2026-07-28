@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>163邮箱重点邮件助手</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      padding: 12px;
+      font: 13px/1.5 "Microsoft YaHei", "PingFang SC", sans-serif;
+      color: #333;
+    }
+    h1 { font-size: 14px; margin-bottom: 10px; color: #c0392b; }
+    .section { margin-bottom: 12px; }
+    .section-title {
+      font-size: 12px; color: #888; margin-bottom: 6px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .section-title a { color: #2980b9; text-decoration: none; cursor: pointer; }
+    .sender-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 6px; margin-bottom: 4px;
+      background: #f7f7f7; border-radius: 4px;
+    }
+    .sender-item .info { flex: 1; overflow: hidden; }
+    .sender-item .name { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sender-item .email { color: #888; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sender-item button {
+      border: none; background: #f1c40f; color: #fff;
+      border-radius: 3px; padding: 2px 8px; cursor: pointer; flex-shrink: 0;
+    }
+    .sender-item button:hover { background: #d4ac0d; }
+    .sender-item .added { color: #27ae60; font-size: 12px; flex-shrink: 0; }
+    .empty { color: #aaa; font-size: 12px; padding: 4px 0; }
+    .status-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; border-top: 1px solid #eee;
+    }
+    .count { color: #c0392b; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>⭐ 163邮箱重点邮件助手</h1>
+
+  <div class="section">
+    <div class="section-title">
+      <span>当前页面发件人</span>
+      <a id="refresh">刷新</a>
+    </div>
+    <div id="sender-list"><div class="empty">正在读取…（需打开 163 邮箱页面）</div></div>
+  </div>
+
+  <div class="section">
+    <div class="status-row">
+      <span>重点名单已有 <span class="count" id="watch-count">0</span> 个联系人</span>
+      <a id="open-options" class="section-title" style="color:#2980b9;cursor:pointer;">管理名单 ›</a>
+    </div>
+  </div>
+
+  <script src="../shared/storage.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>重点名单管理 - 163邮箱重点邮件助手</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      max-width: 640px; margin: 24px auto; padding: 0 16px 40px;
+      font: 14px/1.6 "Microsoft YaHei", "PingFang SC", sans-serif; color: #333;
+    }
+    h1 { font-size: 18px; color: #c0392b; margin-bottom: 4px; }
+    .tip { color: #888; font-size: 12px; margin-bottom: 20px; }
+    h2 { font-size: 15px; margin: 20px 0 10px; }
+    .add-form { display: flex; gap: 8px; margin-bottom: 16px; }
+    .add-form input {
+      padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;
+    }
+    .add-form input[type="text"].email { flex: 2; }
+    .add-form input[type="text"].note { flex: 1; }
+    .add-form button, .io button {
+      padding: 6px 14px; border: none; border-radius: 4px;
+      background: #c0392b; color: #fff; cursor: pointer; font-size: 13px;
+    }
+    .add-form button:hover, .io button:hover { background: #a93226; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; font-size: 13px; }
+    th { color: #888; font-weight: normal; }
+    .del { color: #c0392b; cursor: pointer; border: none; background: none; font-size: 13px; }
+    .settings label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .io { display: flex; gap: 8px; }
+    .io button { background: #2980b9; }
+    .io button:hover { background: #2471a3; }
+    .msg { font-size: 12px; margin-left: 8px; }
+    .msg.ok { color: #27ae60; }
+    .msg.err { color: #c0392b; }
+    .empty { color: #aaa; padding: 12px 0; }
+  </style>
+</head>
+<body>
+  <h1>⭐ 重点名单管理</h1>
+  <p class="tip">支持完整邮箱地址（boss@company.com）或整个域名（@company.com）。名单通过浏览器账号同步。</p>
+
+  <h2>添加关注</h2>
+  <div class="add-form">
+    <input type="text" class="email" id="input-email" placeholder="邮箱地址或 @域名">
+    <input type="text" class="note" id="input-note" placeholder="备注（如：直属领导）">
+    <button id="btn-add">添加</button>
+    <span class="msg" id="add-msg"></span>
+  </div>
+
+  <h2>当前名单</h2>
+  <table>
+    <thead>
+      <tr><th>启用</th><th>地址 / 域名</th><th>备注</th><th></th></tr>
+    </thead>
+    <tbody id="watch-tbody"></tbody>
+  </table>
+  <div class="empty" id="empty-tip" hidden>名单为空，先在上面添加一个关注地址吧。</div>
+
+  <h2>提醒设置</h2>
+  <div class="settings">
+    <label><input type="checkbox" id="set-notify"> 收到重点邮件时弹出桌面通知</label>
+    <label>高亮颜色 <input type="color" id="set-color" value="#fff1b8"></label>
+  </div>
+
+  <h2>导入 / 导出</h2>
+  <div class="io">
+    <button id="btn-export">导出名单 (JSON)</button>
+    <button id="btn-import">导入名单</button>
+    <input type="file" id="file-import" accept=".json" hidden>
+    <span class="msg" id="io-msg"></span>
+  </div>
+
+  <script src="../shared/storage.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

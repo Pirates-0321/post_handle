@@ -1,0 +1,13 @@
+# 系统/编辑器临时文件
+Thumbs.db
+.DS_Store
+*.log
+
+# 依赖与构建产物
+node_modules/
+dist/
+*.zip
+
+# 编辑器配置
+.vscode/
+.idea/

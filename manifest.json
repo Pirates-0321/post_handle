@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "163邮箱重点邮件助手",
+  "version": "0.1.0",
+  "description": "标注 163 邮箱中的重点关注发件人，收到其新邮件时发出桌面通知提醒。",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "notifications",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://mail.163.com/*",
+    "https://email.163.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service_worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://mail.163.com/*",
+        "https://email.163.com/*"
+      ],
+      "js": [
+        "src/shared/storage.js",
+        "src/content/selectors.js",
+        "src/content/content.js"
+      ],
+      "css": [
+        "src/content/highlight.css"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "options_page": "src/options/options.html"
+}
