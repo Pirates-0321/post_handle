@@ -33,6 +33,21 @@
   let autoRefreshTimer = null;
   let noRefreshBtnWarned = false;
 
+  /** 只有收件箱（fid=1）才弹通知；fid 从 URL hash 的 ListModule 参数解析 */
+  const INBOX_FID = 1;
+  let lastFidLogged = undefined;
+
+  /** 从 location.hash 解析当前文件夹 id：#module=mbox.ListModule|{"fid":1,...} */
+  function getCurrentFid() {
+    try {
+      const hash = decodeURIComponent(location.hash || '');
+      const m = hash.match(/"fid"\s*:\s*(\d+)/);
+      return m ? parseInt(m[1], 10) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   async function init() {
     log('content script 已注入 frame:', location.href.slice(0, 150));
     try {
@@ -77,6 +92,8 @@
     observe();
     observeTitleLearning();
     setupAutoRefresh();
+    // SPA 切换文件夹靠 hash 路由，监听后及时重扫（更新视图判定）
+    window.addEventListener('hashchange', () => scan(false));
   }
 
   /**
@@ -103,7 +120,8 @@
   function tryAutoRefresh() {
     if (!chrome.runtime || !chrome.runtime.id) return; // 孤儿脚本
     if (!document.body) return;
-    // 仅当当前视图是邮件列表时才触发（写信/读信页不打扰）
+    // 仅在收件箱视图时触发（其它文件夹无需刷新，写信/读信页不打扰）
+    if (getCurrentFid() !== INBOX_FID) return;
     if (PH_Selectors.findMailRows(document).length === 0) return;
     const btn = PH_Selectors.findRefreshButton(document);
     if (!btn) {
@@ -164,6 +182,14 @@
     }
 
     const rows = PH_Selectors.findMailRows(document);
+    // 文件夹范围判定：仅收件箱弹通知，其它视图（发件箱/已删除等）只记录
+    const fid = getCurrentFid();
+    if (fid !== lastFidLogged) {
+      lastFidLogged = fid;
+      if (fid === INBOX_FID) log('当前视图：收件箱（通知启用）');
+      else if (fid === null) log('当前视图：非邮件列表（未解析到 fid），命中不通知');
+      else log(`当前视图：文件夹 fid=${fid}（非收件箱，命中不通知）`);
+    }
     // 列表尚未渲染出来（React 异步加载）时不算基线
     const isBaselineScan = !sawFirstRows && rows.length > 0;
     if ((isInitScan || !scanSummaryLogged) && rows.length > 0) {
@@ -182,7 +208,11 @@
         if (isNewKey) knownKeys.add(info.key);
         matchedInfos.push(info);
         if (!isBaselineScan && !opts.refreshOnly && isNewKey && info.unread) {
-          reportNewMail(info, matched);
+          if (fid === INBOX_FID) {
+            reportNewMail(info, matched);
+          } else {
+            log(`重点邮件出现在非收件箱视图（fid=${fid}），不弹通知:`, info.name, '|', info.subject);
+          }
         }
       }
     }

@@ -101,12 +101,34 @@ const PH_Selectors = {
     return m ? m[0] : '';
   },
 
-  /** 推断未读：未读图标/标记，或行内存在加粗文字 */
+  /**
+   * 推断未读。
+   * 实测：未读行的"发件人"与"主题"文字为粗体——只探测这两处，
+   * 不扫全行（行内图标字体等元素 font-weight 天然偏高，会误判已读行）。
+   */
   isUnread(row) {
     if (row.querySelector('img[src*="unread" i], [class*="unread" i], [aria-label*="未读"]')) {
       return true;
     }
-    for (const p of row.querySelectorAll('span, a, div, b, font')) {
+    const probes = [];
+    const addProbes = root => {
+      if (root) probes.push(...root.querySelectorAll('span, b, font, div, a'));
+    };
+    // 发件人列
+    addProbes(row.querySelector(this.SENDER_CELL));
+    // 主题列（163 单元格带 sign 语义属性）
+    addProbes(row.querySelector('[sign*="subject" i], [sign*="title" i]'));
+    // 兜底：用 aria-label 解析出的主题文本定位叶子元素
+    const subject = this.parseAriaLabel(row.getAttribute('aria-label')).subject;
+    if (subject) {
+      for (const n of row.querySelectorAll('span, a, div')) {
+        if (n.children.length === 0 && (n.textContent || '').trim() === subject) {
+          probes.push(n);
+          break;
+        }
+      }
+    }
+    for (const p of probes) {
       if (parseInt(getComputedStyle(p).fontWeight, 10) >= 600) return true;
     }
     return false;
