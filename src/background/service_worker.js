@@ -37,7 +37,9 @@ async function notifyOnce(mail) {
     iconUrl: chrome.runtime.getURL('icons/icon128.png'),
     title,
     message,
-    priority: 2
+    priority: 2,
+    // 常驻通知：不自动消失，需用户手动点击关闭或点击通知体
+    requireInteraction: true
   });
 }
 
