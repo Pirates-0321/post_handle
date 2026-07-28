@@ -11,7 +11,8 @@
 
 const PH_DEFAULT_SETTINGS = {
   desktopNotify: true,
-  highlightColor: '#fff1b8'
+  highlightColor: '#fff1b8',
+  autoRefreshSec: 60   // 定时触发 163 列表"刷新"的间隔（秒），0 = 关闭，最小 30
 };
 
 const PH_Storage = {

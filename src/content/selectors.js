@@ -30,6 +30,24 @@ const PH_Selectors = {
   },
 
   /**
+   * 查找工具栏"刷新"按钮：按文本匹配（163 显示为"刷 新"，需去空白），
+   * 取可见且尺寸最小的候选（按钮本体或其文字节点，点击事件会冒泡到处理器）。
+   */
+  findRefreshButton(doc) {
+    const candidates = [];
+    for (const el of doc.querySelectorAll('div, span, a, button')) {
+      if (el.children.length > 2) continue;
+      const text = (el.textContent || '').replace(/\s+/g, '');
+      if (text !== '刷新') continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      candidates.push({ el, area: rect.width * rect.height });
+    }
+    candidates.sort((a, b) => a.area - b.area);
+    return candidates.length ? candidates[0].el : null;
+  },
+
+  /**
    * 从行的 aria-label 解析 主题/发件人名/时间。
    * 实测格式："回复：测试重点邮箱收件提醒 发件人 ： 裴一发 时间： 2026年7月28日 10:06 (星期二)"
    */

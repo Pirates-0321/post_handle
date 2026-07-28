@@ -17,6 +17,7 @@ document.getElementById('input-email').addEventListener('keydown', e => {
 });
 document.getElementById('set-notify').addEventListener('change', onSettingsChange);
 document.getElementById('set-color').addEventListener('change', onSettingsChange);
+document.getElementById('set-refresh').addEventListener('change', onSettingsChange);
 document.getElementById('btn-export').addEventListener('click', onExport);
 document.getElementById('btn-import').addEventListener('click', () => {
   document.getElementById('file-import').click();
@@ -28,6 +29,7 @@ async function init() {
   const settings = await PH_Storage.getSettings();
   document.getElementById('set-notify').checked = settings.desktopNotify;
   document.getElementById('set-color').value = settings.highlightColor;
+  document.getElementById('set-refresh').value = settings.autoRefreshSec;
 }
 
 async function renderList() {
@@ -97,9 +99,13 @@ async function onAdd() {
 }
 
 async function onSettingsChange() {
+  let autoRefreshSec = parseInt(document.getElementById('set-refresh').value, 10);
+  if (isNaN(autoRefreshSec) || autoRefreshSec < 0) autoRefreshSec = 0;
+  if (autoRefreshSec > 600) autoRefreshSec = 600;
   await PH_Storage.updateSettings({
     desktopNotify: document.getElementById('set-notify').checked,
-    highlightColor: document.getElementById('set-color').value
+    highlightColor: document.getElementById('set-color').value,
+    autoRefreshSec
   });
 }
 

@@ -32,6 +32,8 @@
   let nameEmailMap = {};
   let scanSummaryLogged = false;
   let orphanWarned = false;
+  let autoRefreshTimer = null;
+  let noRefreshBtnWarned = false;
 
   async function init() {
     log('content script 已注入 frame:', location.href.slice(0, 150));
@@ -58,6 +60,7 @@
       if (area === 'sync' && changes.settings) {
         settings = { ...settings, ...(changes.settings.newValue || {}) };
         applyHighlightColor();
+        setupAutoRefresh();
       }
       if (area === 'local' && changes.nameEmailMap) {
         nameEmailMap = changes.nameEmailMap.newValue || {};
@@ -77,6 +80,45 @@
     scan(true);
     observe();
     observeTitleLearning();
+    setupAutoRefresh();
+  }
+
+  /**
+   * 定时触发 163 列表的"刷新"按钮。
+   * 背景：163 网页版自身按固定间隔轮询服务器，新邮件到达后列表 DOM
+   * 不会立刻更新，扩展只能检测 DOM 中的行——主动刷新可把检测延迟
+   * 压缩到设定的间隔内。
+   */
+  function setupAutoRefresh() {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+    const sec = Math.max(Number(settings.autoRefreshSec) || 0, 0);
+    if (sec === 0) {
+      log('列表自动刷新已关闭（新邮件检测依赖 163 自身刷新节奏）');
+      return;
+    }
+    const interval = Math.max(sec, 30); // 下限 30 秒，避免对服务器造成压力
+    autoRefreshTimer = setInterval(tryAutoRefresh, interval * 1000);
+    log(`列表自动刷新：每 ${interval} 秒触发一次`);
+  }
+
+  function tryAutoRefresh() {
+    if (!chrome.runtime || !chrome.runtime.id) return; // 孤儿脚本
+    if (!document.body) return;
+    // 仅当当前视图是邮件列表时才触发（写信/读信页不打扰）
+    if (PH_Selectors.findMailRows(document).length === 0) return;
+    const btn = PH_Selectors.findRefreshButton(document);
+    if (!btn) {
+      if (!noRefreshBtnWarned) {
+        noRefreshBtnWarned = true;
+        warn('未找到列表"刷新"按钮，自动刷新未生效（163 结构可能已改版）');
+      }
+      return;
+    }
+    btn.click();
+    log('已自动触发列表刷新（检测新邮件）');
   }
 
   function applyHighlightColor() {

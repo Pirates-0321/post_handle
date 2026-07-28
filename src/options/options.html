@@ -60,8 +60,9 @@
 
   <h2>提醒设置</h2>
   <div class="settings">
-    <label><input type="checkbox" id="set-notify"> 收到重点邮件时弹出桌面通知</label>
+    <label><input type="checkbox" id="set-notify"> 收到重点邮件时弹出桌面通知（常驻，需手动关闭）</label>
     <label>高亮颜色 <input type="color" id="set-color" value="#fff1b8"></label>
+    <label>列表自动刷新 <input type="number" id="set-refresh" min="0" max="600" step="10" style="width:70px"> 秒（0 = 关闭；163 网页版自身按间隔轮询，自动刷新可缩短新邮件检测延迟，最小 30 秒）</label>
   </div>
 
   <h2>导入 / 导出</h2>
