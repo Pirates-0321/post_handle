@@ -3,9 +3,12 @@
  * 职责：
  *   1. 扫描邮件列表（div[sign="letter"] 行），对命中重点名单的行高亮 + 星标；
  *   2. MutationObserver 监听列表变化，识别新到达的重点未读邮件并上报通知；
- *   3. 监听发件人 title 属性变化，学习"显示名→地址"映射（悬停发件人时
- *      163 会懒填充地址），学习后地址/域名规则即可命中；
+ *   3. 监听发件人 title 属性变化，学习"显示名→地址"映射；
  *   4. 响应 popup 的"当前页面发件人"查询。
+ *
+ * 新邮件判定：维护"已见过的重点邮件 key"集合。首次见到邮件行的扫描为基线
+ * （163 是 React SPA，列表异步渲染，基线必须在列表出现后完成），基线只记录
+ * 不通知；之后出现的"新 key"且未读才上报。
  *
  * 诊断：所有日志带 [PH] 前缀，控制台过滤 "[PH]" 即可观察扩展工作状态。
  */
@@ -20,13 +23,15 @@
   function log(...args) { console.log('[PH]', ...args); }
   function warn(...args) { console.warn('[PH]', ...args); }
 
-  /** 本 frame 生命周期内已上报过的邮件 key（跨 frame 去重由 service worker 负责） */
-  const reportedKeys = new Set();
+  /** 本 frame 内已见过的重点邮件 key（跨 frame 通知去重由 service worker 负责） */
+  const knownKeys = new Set();
+  /** 是否已完成"首次见到邮件行"的基线（列表异步渲染，不能按注入时机算） */
+  let sawFirstRows = false;
   let watchlist = [];
   let settings = { desktopNotify: true, highlightColor: '#fff1b8' };
   let nameEmailMap = {};
-  let baselineDone = false;
   let scanSummaryLogged = false;
+  let orphanWarned = false;
 
   async function init() {
     log('content script 已注入 frame:', location.href.slice(0, 150));
@@ -103,10 +108,18 @@
 
   /**
    * 扫描当前 document 的邮件列表。
-   * @param {boolean} isBaseline 是否基线扫描（基线只记录、不通知）
+   * @param {boolean} isInitScan 是否注入后的首次调用
    * @param {object} opts refreshOnly: 名单/映射变化后重刷高亮，不触发通知
    */
-  function scan(isBaseline, opts = {}) {
+  function scan(isInitScan, opts = {}) {
+    // 扩展重载后旧脚本会成为"孤儿"：DOM 操作还在但消息/存储通道已死
+    if (!chrome.runtime || !chrome.runtime.id) {
+      if (!orphanWarned) {
+        orphanWarned = true;
+        warn('检测到扩展已重新加载，本页面的扩展脚本已失效，请按 F5 刷新页面');
+      }
+      return;
+    }
     if (!document.body) return;
     if (watchlist.length === 0) {
       if (!scanSummaryLogged) {
@@ -117,22 +130,25 @@
     }
 
     const rows = PH_Selectors.findMailRows(document);
-    if ((isBaseline || !scanSummaryLogged) && rows.length > 0) {
+    // 列表尚未渲染出来（React 异步加载）时不算基线
+    const isBaselineScan = !sawFirstRows && rows.length > 0;
+    if ((isInitScan || !scanSummaryLogged) && rows.length > 0) {
       log(`扫描：识别邮件行 ${rows.length} 行`);
       scanSummaryLogged = true;
     }
 
-    let matchedCount = 0;
+    const matchedInfos = [];
     for (const row of rows) {
       const info = resolveRow(row);
       if (!info) continue;
 
       const matched = PH_Storage.matchWatchlist({ name: info.name, email: info.email }, watchlist);
       if (matched) {
-        matchedCount++;
+        const isNewKey = !knownKeys.has(info.key);
+        if (isNewKey) knownKeys.add(info.key);
+        matchedInfos.push(info);
         highlightRow(row, matched);
-        if (!isBaseline && !opts.refreshOnly && info.unread && !reportedKeys.has(info.key)) {
-          reportedKeys.add(info.key);
+        if (!isBaselineScan && !opts.refreshOnly && isNewKey && info.unread) {
           reportNewMail(info, matched);
         }
       } else {
@@ -140,13 +156,13 @@
       }
     }
 
-    if (isBaseline) {
-      baselineDone = true;
-      log(`基线完成：命中重点邮件 ${matchedCount} 行（基线不发通知）`);
-      if (rows.length === 0) {
-        warn('未识别到任何邮件行。若你正停留在邮件列表页，163 页面结构可能已改版，'
-          + '请反馈给开发者适配 selectors.js');
-      }
+    if (isBaselineScan) {
+      sawFirstRows = true;
+      log(`基线完成：邮件行 ${rows.length} 行，命中重点 ${matchedInfos.length} 行（基线不发通知）`);
+      matchedInfos.slice(0, 10).forEach(m =>
+        log(`  基线命中: ${m.name} | ${m.unread ? '未读' : '已读'} | ${m.subject}`));
+    } else if (isInitScan && rows.length === 0) {
+      log('列表尚未渲染（React 异步加载），等待列表出现后再建基线…');
     }
   }
 
@@ -173,7 +189,7 @@
   /** 上报给 service worker 弹通知 */
   function reportNewMail(info, matchedItem) {
     if (!settings.desktopNotify) return;
-    log('发现重点新邮件，上报通知:', info.name, info.subject);
+    log('发现重点新邮件，上报通知:', info.name, '|', info.subject, '|', info.timeText);
     try {
       chrome.runtime.sendMessage({
         type: 'PH_NEW_VIP_MAIL',
@@ -187,7 +203,7 @@
         }
       });
     } catch (e) {
-      warn('上报通知失败，扩展上下文可能已失效，请刷新页面', e);
+      warn('上报通知失败，扩展上下文可能已失效，请按 F5 刷新页面', e);
     }
   }
 
@@ -214,7 +230,6 @@
         if (!cell) continue;
         const email = PH_Selectors.extractEmail(el.getAttribute('title'));
         if (!email) continue;
-        const row = el.closest(PH_Selectors.ROW);
         const name = (cell.textContent || '').trim();
         if (!name || nameEmailMap[name] === email) continue;
         nameEmailMap[name] = email;
